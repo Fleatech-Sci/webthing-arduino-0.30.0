@@ -9,18 +9,18 @@ This fork has been tested with the following libraries on Arduino V2.3.10
 Compilation has been tested with the following library versions, to fulfill the API updates for ArduinoJson 7.x.x, ESPAsyncWebServer 3.11.2 and esp32 3.3.10.
 Full testing is currently proceeding.
 
-Using library webthing-arduino at version 0.30.0
-Using library ESP Async WebServer at version 3.11.2
-Using library FS at version 3.3.10
-Using library Async TCP at version 3.4.10
-Using library ArduinoJson at version 7.4.3
-Using library WiFi at version 3.3.10
-Using library Networking at version 3.3.10
-Using library ESPmDNS at version 3.3.10
-Using library ElegantOTA at version 3.1.7
-Using library Update at version 3.3.10
-Using library BlockNot at version 3.1.0
-Using library Hash at version 3.3.10
+Using library webthing-arduino at version 0.30.0 \
+Using library ESP Async WebServer at version 3.11.2 \
+Using library FS at version 3.3.10 \
+Using library Async TCP at version 3.4.10 \
+Using library ArduinoJson at version 7.4.3 \
+Using library WiFi at version 3.3.10 \
+Using library Networking at version 3.3.10 \
+Using library ESPmDNS at version 3.3.10 \
+Using library ElegantOTA at version 3.1.7 \
+Using library Update at version 3.3.10 \
+Using library BlockNot at version 3.1.0 \
+Using library Hash at version 3.3.10 \
 
 EthernetWebThingAdapter.h and WiFiWebThingAdapter.h have NOT been updated as yet.
 
