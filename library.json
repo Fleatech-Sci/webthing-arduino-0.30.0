@@ -2,7 +2,7 @@
   "name": "webthing-arduino",
   "description": "A library for creating Web Things using the Web of Things API. Runs on ESP8266, ESP32, Ethernet, and WiFi101-compatible boards. Compatible with the WebThings Gateway.",
   "keywords": "Communication",
-  "version": "0.3.0",
+  "version": "0.30.0",
   "authors": {
     "name": "WebThingsIO",
     "email": "team@webthings.io",
@@ -10,13 +10,13 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/WebThingsIO/webthing-arduino.git"
+    "url": "https://github.com/Fleatech-Sci/webthing-arduino-0.30.0.git"
   },
   "license": "MPL-2.0",
   "frameworks": "arduino",
   "platforms": "espressif8266,espressif32,atmelavr,atmelsam",
   "dependencies": {
-    "bblanchon/ArduinoJson": "^7.3.1"
+    "bblanchon/ArduinoJson": "^7.4.3"
   },
   "export": {
     "exclude": [
