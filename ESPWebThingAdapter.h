@@ -1,5 +1,5 @@
-/**
- * ESPWebThingAdapter.h
+/*
+ * ESPWebThingAdapter.h V3.10.0
  *
  * Exposes the Web Thing API based on provided ThingDevices.
  * Suitable for ESP32 and ESP8266 using ESPAsyncWebServer and ESPAsyncTCP
@@ -7,7 +7,18 @@
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * 
  */
+
+/*
+A couple of things worth watching during testing/deployment, given what's in this file:
+
+Body size limit: ESP_MAX_PUT_BODY_SIZE is 512 bytes. If any PUT/POST payload (property updates, action requests) gets close to that, you'll hit the 413 response added in handleBody. Worth a quick check with a realistic payload size.
+
+_tempObject body buffer lifecycle: since BodyData is malloc'd per-request and freed via freeBodyData, it's worth confirming under concurrent/rapid requests (e.g. a controller hammering property updates) that nothing leaks — a quick heap-watch (ESP.getFreeHeap()) during a stress test would catch it early.
+
+WebSocket reconnects: if you're using the /things/{id} websocket for property change notifications, worth testing a client disconnect/reconnect cycle to make sure removeEventSubscriptions behaves as expected.
+*/
 
 #pragma once
 
@@ -30,7 +41,7 @@
 
 class WebThingAdapter {
 public:
-  WebThingAdapter(String _name, IPAddress _ip, uint16_t _port = 80,
+  WebThingAdapter(const String &_name, IPAddress _ip, uint16_t _port = 80,
                   bool _disableHostValidation = false)
       : server(_port), name(_name), ip(_ip.toString()), port(_port),
         disableHostValidation(_disableHostValidation) {}
@@ -51,14 +62,15 @@ public:
         "Access-Control-Allow-Headers",
         "Origin, X-Requested-With, Content-Type, Accept");
 
-    this->server.onNotFound(std::bind(&WebThingAdapter::handleUnknown, this,
+    this->server.onNotFound((ArRequestHandlerFunction)std::bind(&WebThingAdapter::handleUnknown, this,
                                       std::placeholders::_1));
 
     this->server.on("/*", HTTP_OPTIONS,
-                    std::bind(&WebThingAdapter::handleOptions, this,
+                    (ArRequestHandlerFunction)std::bind(&WebThingAdapter::handleOptions, this,
                               std::placeholders::_1));
+							  
     this->server.on("/", HTTP_GET,
-                    std::bind(&WebThingAdapter::handleThings, this,
+                    (ArRequestHandlerFunction)std::bind(&WebThingAdapter::handleThings, this,
                               std::placeholders::_1));
 
     ThingDevice *device = this->firstDevice;
@@ -69,14 +81,14 @@ public:
       while (property != nullptr) {
         String propertyBase = deviceBase + "/properties/" + property->id;
         this->server.on(propertyBase.c_str(), HTTP_GET,
-                        std::bind(&WebThingAdapter::handleThingPropertyGet,
+                        (ArRequestHandlerFunction)std::bind(&WebThingAdapter::handleThingPropertyGet,
                                   this, std::placeholders::_1, property));
         this->server.on(propertyBase.c_str(), HTTP_PUT,
-                        std::bind(&WebThingAdapter::handleThingPropertyPut,
+                        (ArRequestHandlerFunction)std::bind(&WebThingAdapter::handleThingPropertyPut,
                                   this, std::placeholders::_1, device,
                                   property),
                         NULL,
-                        std::bind(&WebThingAdapter::handleBody, this,
+                        (ArBodyHandlerFunction)std::bind(&WebThingAdapter::handleBody, this,
                                   std::placeholders::_1, std::placeholders::_2,
                                   std::placeholders::_3, std::placeholders::_4,
                                   std::placeholders::_5));
@@ -88,18 +100,18 @@ public:
       while (action != nullptr) {
         String actionBase = deviceBase + "/actions/" + action->id;
         this->server.on(actionBase.c_str(), HTTP_GET,
-                        std::bind(&WebThingAdapter::handleThingActionGet, this,
+                        (ArRequestHandlerFunction)std::bind(&WebThingAdapter::handleThingActionGet, this,
                                   std::placeholders::_1, device, action));
         this->server.on(actionBase.c_str(), HTTP_POST,
-                        std::bind(&WebThingAdapter::handleThingActionPost,
+                        (ArRequestHandlerFunction)std::bind(&WebThingAdapter::handleThingActionPost,
                                   this, std::placeholders::_1, device, action),
                         NULL,
-                        std::bind(&WebThingAdapter::handleBody, this,
+                        (ArBodyHandlerFunction)std::bind(&WebThingAdapter::handleBody, this,
                                   std::placeholders::_1, std::placeholders::_2,
                                   std::placeholders::_3, std::placeholders::_4,
                                   std::placeholders::_5));
         this->server.on(actionBase.c_str(), HTTP_DELETE,
-                        std::bind(&WebThingAdapter::handleThingActionDelete,
+                        (ArRequestHandlerFunction)std::bind(&WebThingAdapter::handleThingActionDelete,
                                   this, std::placeholders::_1, device,
                                   action));
         action = (ThingAction *)action->next;
@@ -109,31 +121,31 @@ public:
       while (event != nullptr) {
         String eventBase = deviceBase + "/events/" + event->id;
         this->server.on(eventBase.c_str(), HTTP_GET,
-                        std::bind(&WebThingAdapter::handleThingEventGet, this,
+                        (ArRequestHandlerFunction)std::bind(&WebThingAdapter::handleThingEventGet, this,
                                   std::placeholders::_1, device, event));
         event = (ThingEvent *)event->next;
       }
 
       this->server.on((deviceBase + "/properties").c_str(), HTTP_GET,
-                      std::bind(&WebThingAdapter::handleThingPropertiesGet,
+                      (ArRequestHandlerFunction)std::bind(&WebThingAdapter::handleThingPropertiesGet,
                                 this, std::placeholders::_1,
                                 device->firstProperty));
       this->server.on((deviceBase + "/actions").c_str(), HTTP_GET,
-                      std::bind(&WebThingAdapter::handleThingActionsGet, this,
+                      (ArRequestHandlerFunction)std::bind(&WebThingAdapter::handleThingActionsGet, this,
                                 std::placeholders::_1, device));
       this->server.on((deviceBase + "/actions").c_str(), HTTP_POST,
-                      std::bind(&WebThingAdapter::handleThingActionsPost, this,
+                      (ArRequestHandlerFunction)std::bind(&WebThingAdapter::handleThingActionsPost, this,
                                 std::placeholders::_1, device),
                       NULL,
-                      std::bind(&WebThingAdapter::handleBody, this,
+                      (ArBodyHandlerFunction)std::bind(&WebThingAdapter::handleBody, this,
                                 std::placeholders::_1, std::placeholders::_2,
                                 std::placeholders::_3, std::placeholders::_4,
                                 std::placeholders::_5));
       this->server.on((deviceBase + "/events").c_str(), HTTP_GET,
-                      std::bind(&WebThingAdapter::handleThingEventsGet, this,
+                      (ArRequestHandlerFunction)std::bind(&WebThingAdapter::handleThingEventsGet, this,
                                 std::placeholders::_1, device));
       this->server.on(deviceBase.c_str(), HTTP_GET,
-                      std::bind(&WebThingAdapter::handleThing, this,
+                      (ArRequestHandlerFunction)std::bind(&WebThingAdapter::handleThing, this,
                                 std::placeholders::_1, device));
 
       device = device->next;
@@ -181,6 +193,21 @@ public:
   }
 
 private:
+  // Per-request PUT/POST body buffer.
+  //
+  // This is stashed on AsyncWebServerRequest::_tempObject rather than on
+  // the adapter itself, since ESPAsyncWebServer can interleave body
+  // callbacks for multiple simultaneously-connected clients. A single
+  // shared buffer on the adapter would let one client's request corrupt
+  // another's in-flight body. _tempObject is a void* the framework
+  // reserves for exactly this purpose and frees with free() when the
+  // request is destroyed, so we allocate it with malloc().
+  struct BodyData {
+    char data[ESP_MAX_PUT_BODY_SIZE];
+    size_t len;
+    bool complete;
+  };
+
   AsyncWebServer server;
 
   String name;
@@ -189,17 +216,24 @@ private:
   bool disableHostValidation;
   ThingDevice *firstDevice = nullptr;
   ThingDevice *lastDevice = nullptr;
-  char body_data[ESP_MAX_PUT_BODY_SIZE];
-  bool b_has_body_data = false;
-  
+
+  static BodyData *getBodyData(AsyncWebServerRequest *request) {
+    return reinterpret_cast<BodyData *>(request->_tempObject);
+  }
+
+  static void freeBodyData(AsyncWebServerRequest *request) {
+    if (request->_tempObject != nullptr) {
+      free(request->_tempObject);
+      request->_tempObject = nullptr;
+    }
+  }
+
   bool verifyHost(AsyncWebServerRequest *request) {
     if (disableHostValidation) {
       return true;
     }
 
-	// modified by A.L.Benci, 08/04/2025
-	//AsyncWebHeader *header = request->getHeader("Host");
-	const AsyncWebHeader *header = request->getHeader("Host");
+    const AsyncWebHeader *header = request->getHeader("Host");
     if (header == nullptr) {
       request->send(403);
       return false;
@@ -280,8 +314,7 @@ private:
             new JsonDocument;
 
         JsonObject actionObj = actionRequest->to<JsonObject>();
-        //JsonObject nested = actionObj.createNestedObject(kv.key());
-		JsonObject nested = actionObj[kv.key()].to<JsonObject>();
+        JsonObject nested = actionObj[kv.key()].to<JsonObject>();
 
         for (JsonPair kvInner : kv.value().as<JsonObject>()) {
           nested[kvInner.key()] = kvInner.value();
@@ -294,6 +327,10 @@ private:
           device->sendActionStatus(obj);
 
           obj->start();
+        } else {
+          // requestAction() only takes ownership of actionRequest on
+          // success; free it ourselves on failure to avoid a leak.
+          delete actionRequest;
         }
       }
     } else if (messageType == "addEventSubscription") {
@@ -310,8 +347,7 @@ private:
     // Prepare one buffer per device
     JsonDocument message;
     message["messageType"] = "propertyStatus";
-    //JsonObject prop = message.createNestedObject("data");
-	JsonObject prop = message["data"].to<JsonObject>();
+    JsonObject prop = message["data"].to<JsonObject>();
     bool dataToSend = false;
     ThingItem *item = device->firstProperty;
     while (item != nullptr) {
@@ -356,8 +392,7 @@ private:
     JsonArray things = buf.to<JsonArray>();
     ThingDevice *device = this->firstDevice;
     while (device != nullptr) {
-      //JsonObject descr = things.createNestedObject();
-	  JsonObject descr = things.add<JsonObject>();
+      JsonObject descr = things.add<JsonObject>();
       device->serialize(descr, ip, port);
       descr["href"] = "/things/" + device->id;
       device = device->next;
@@ -469,17 +504,17 @@ private:
       return;
     }
 
-    if (!b_has_body_data) {
+    BodyData *bodyData = getBodyData(request);
+    if (bodyData == nullptr || !bodyData->complete) {
       request->send(422); // unprocessable entity (b/c no body)
+      freeBodyData(request);
       return;
     }
 
-    JsonDocument *newBuffer =
-        new JsonDocument;
-    auto error = deserializeJson(*newBuffer, (const char *)body_data);
+    JsonDocument *newBuffer = new JsonDocument;
+    auto error = deserializeJson(*newBuffer, (const char *)bodyData->data);
+    freeBodyData(request);
     if (error) { // unable to parse json
-      b_has_body_data = false;
-      memset(body_data, 0, sizeof(body_data));
       request->send(500);
       delete newBuffer;
       return;
@@ -487,10 +522,10 @@ private:
 
     JsonObject newAction = newBuffer->as<JsonObject>();
 
-    //if (!newAction.containsKey(action->id)) {
-	if (!newAction[action->id].is<int>()) {
-      b_has_body_data = false;
-      memset(body_data, 0, sizeof(body_data));
+    // A missing key deserializes to a null JsonVariant, so check for
+    // that rather than checking the value's type (an action whose
+    // parameter isn't an int would otherwise be wrongly rejected here).
+    if (newAction[action->id].isNull()) {
       request->send(400);
       delete newBuffer;
       return;
@@ -499,8 +534,6 @@ private:
     ThingActionObject *obj = device->requestAction(newBuffer);
 
     if (obj == nullptr) {
-      b_has_body_data = false;
-      memset(body_data, 0, sizeof(body_data));
       request->send(500);
       delete newBuffer;
       return;
@@ -519,9 +552,6 @@ private:
     AsyncWebServerResponse *response =
         request->beginResponse(201, "application/json", jsonStr);
     request->send(response);
-
-    b_has_body_data = false;
-    memset(body_data, 0, sizeof(body_data));
 
     obj->start();
   }
@@ -581,17 +611,17 @@ private:
       return;
     }
 
-    if (!b_has_body_data) {
+    BodyData *bodyData = getBodyData(request);
+    if (bodyData == nullptr || !bodyData->complete) {
       request->send(422); // unprocessable entity (b/c no body)
+      freeBodyData(request);
       return;
     }
 
-    JsonDocument *newBuffer =
-        new JsonDocument;
-    auto error = deserializeJson(*newBuffer, (const char *)body_data);
+    JsonDocument *newBuffer = new JsonDocument;
+    auto error = deserializeJson(*newBuffer, (const char *)bodyData->data);
+    freeBodyData(request);
     if (error) { // unable to parse json
-      b_has_body_data = false;
-      memset(body_data, 0, sizeof(body_data));
       request->send(500);
       delete newBuffer;
       return;
@@ -600,8 +630,6 @@ private:
     JsonObject newAction = newBuffer->as<JsonObject>();
 
     if (newAction.size() != 1) {
-      b_has_body_data = false;
-      memset(body_data, 0, sizeof(body_data));
       request->send(400);
       delete newBuffer;
       return;
@@ -610,8 +638,6 @@ private:
     ThingActionObject *obj = device->requestAction(newBuffer);
 
     if (obj == nullptr) {
-      b_has_body_data = false;
-      memset(body_data, 0, sizeof(body_data));
       request->send(500);
       delete newBuffer;
       return;
@@ -630,9 +656,6 @@ private:
     AsyncWebServerResponse *response =
         request->beginResponse(201, "application/json", jsonStr);
     request->send(response);
-
-    b_has_body_data = false;
-    memset(body_data, 0, sizeof(body_data));
 
     obj->start();
   }
@@ -654,13 +677,30 @@ private:
 
   void handleBody(AsyncWebServerRequest *request, uint8_t *data, size_t len,
                   size_t index, size_t total) {
-    if (total >= ESP_MAX_PUT_BODY_SIZE ||
-        index + len >= ESP_MAX_PUT_BODY_SIZE) {
-      return; // cannot store this size..
+    // Leave room for a trailing null terminator.
+    if (total >= ESP_MAX_PUT_BODY_SIZE - 1) {
+      if (index == 0) {
+        // Only reply once per request; report clearly instead of
+        // silently dropping the body and later returning a
+        // misleading "no body" (422) response.
+        request->send(413); // payload too large
+      }
+      return;
     }
-    // copy to internal buffer
-    memcpy(&body_data[index], data, len);
-    b_has_body_data = true;
+
+    BodyData *bodyData = getBodyData(request);
+    if (bodyData == nullptr) {
+      bodyData = (BodyData *)malloc(sizeof(BodyData));
+      memset(bodyData, 0, sizeof(BodyData));
+      request->_tempObject = bodyData;
+    }
+
+    memcpy(&bodyData->data[index], data, len);
+    bodyData->len = index + len;
+    if (index + len == total) {
+      bodyData->data[bodyData->len] = '\0';
+      bodyData->complete = true;
+    }
   }
 
   void handleThingPropertyPut(AsyncWebServerRequest *request,
@@ -668,25 +708,27 @@ private:
     if (!verifyHost(request)) {
       return;
     }
-    if (!b_has_body_data) {
+
+    BodyData *bodyData = getBodyData(request);
+    if (bodyData == nullptr || !bodyData->complete) {
       request->send(422); // unprocessable entity (b/c no body)
+      freeBodyData(request);
       return;
     }
 
     JsonDocument newBuffer;
-    auto error = deserializeJson(newBuffer, body_data);
+    auto error = deserializeJson(newBuffer, bodyData->data);
+    freeBodyData(request);
     if (error) { // unable to parse json
-      b_has_body_data = false;
-      memset(body_data, 0, sizeof(body_data));
       request->send(500);
       return;
     }
     JsonObject newProp = newBuffer.as<JsonObject>();
 
-    // if (!newProp.containsKey(property->id)) {
-	if (!newProp[property->id].is<int>()) {
-      b_has_body_data = false;
-      memset(body_data, 0, sizeof(body_data));
+    // A missing key deserializes to a null JsonVariant, so check for
+    // that rather than checking the value's type (a property whose
+    // value isn't an int would otherwise be wrongly rejected here).
+    if (newProp[property->id].isNull()) {
       request->send(400);
       return;
     }
@@ -697,9 +739,5 @@ private:
         request->beginResponseStream("application/json");
     serializeJson(newProp, *response);
     request->send(response);
-
-    b_has_body_data = false;
-    memset(body_data, 0, sizeof(body_data));
   }
 };
-

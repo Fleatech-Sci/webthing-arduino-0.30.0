@@ -25,6 +25,15 @@
 #define ARDUINOJSON_USE_LONG_LONG 1
 #include <ArduinoJson.h>
 
+// Maximum number of queued event objects retained per device before the
+// oldest ones are discarded. Without a cap, any device that fires events
+// (timers, sensor changes, etc.) leaks memory without bound, since nothing
+// else in this file ever removes entries from ThingDevice::eventQueue.
+// Override before including this header if a different default is needed.
+#ifndef THING_EVENT_QUEUE_MAX_SIZE
+#define THING_EVENT_QUEUE_MAX_SIZE 10
+#endif
+
 enum ThingDataType { NO_STATE, BOOLEAN, NUMBER, INTEGER, STRING };
 typedef ThingDataType ThingPropertyType;
 
@@ -146,7 +155,11 @@ public:
   String title;
   String description;
   String type;
-  JsonObject *input;
+  // Default-initialized to nullptr: the single-argument constructor below
+  // does not set this explicitly, and an uninitialized pointer here would
+  // be read (and potentially dereferenced) by serialize()'s
+  // `if (input != nullptr)` check.
+  JsonObject *input = nullptr;
   ThingAction *next = nullptr;
 
   ThingAction(const char *id_,
@@ -216,7 +229,16 @@ public:
 
   ThingItem(const char *id_, const char *description_, ThingDataType type_,
             const char *atType_)
-      : id(id_), description(description_), type(type_), atType(atType_) {}
+      : id(id_), description(description_), type(type_), atType(atType_) {
+    // STRING-type items store their value through the union's `string`
+    // pointer, which otherwise requires the caller to allocate a String
+    // and wire up the pointer manually before the first PUT/set call.
+    // Point it at our own backing storage so STRING properties/events
+    // work out of the box, the same way BOOLEAN/NUMBER/INTEGER do.
+    if (type_ == STRING) {
+      value.string = &stringStorage;
+    }
+  }
 
   void setValue(ThingDataValue newValue) {
     this->value = newValue;
@@ -286,7 +308,10 @@ public:
       obj["multipleOf"] = multipleOf;
     }
 
-    if (atType != nullptr) {
+    // atType is a String, not a pointer, so compare against "" rather
+    // than nullptr (matches how every other optional field above is
+    // checked, and doesn't depend on String's implicit nullptr handling).
+    if (atType != "") {
       obj["@type"] = atType;
     }
 
@@ -323,6 +348,8 @@ public:
 private:
   ThingDataValue value = {false};
   bool hasChanged = false;
+  // Backing storage for STRING-type items; see the constructor above.
+  String stringStorage;
 };
 
 class ThingProperty : public ThingItem {
@@ -340,14 +367,13 @@ public:
   void serialize(JsonObject obj, String deviceId, String resourceType) {
     ThingItem::serialize(obj, deviceId, resourceType);
 
-    const char **enumVal = propertyEnum;
     bool hasEnum = propertyEnum != nullptr && *propertyEnum != nullptr;
 
     if (hasEnum) {
-      enumVal = propertyEnum;
+      const char **enumVal = propertyEnum;
       //JsonArray propEnum = obj.createNestedArray("enum");
 	  JsonArray propEnum = obj["enum"].to<JsonArray>();
-      while (propertyEnum != nullptr && *enumVal != nullptr) {
+      while (*enumVal != nullptr) {
         propEnum.add(*enumVal);
         enumVal++;
       }
@@ -480,6 +506,12 @@ public:
   ThingActionObject *actionQueue = nullptr;
   ThingEvent *firstEvent = nullptr;
   ThingEventObject *eventQueue = nullptr;
+  // Number of objects currently in eventQueue, tracked so pruning doesn't
+  // need to walk the whole list just to know when to start.
+  size_t eventQueueSize = 0;
+  // Cap on eventQueue length; oldest entries are dropped once exceeded.
+  // Set to 0 to disable pruning (unbounded growth - not recommended).
+  size_t eventQueueMax = THING_EVENT_QUEUE_MAX_SIZE;
 
   ThingDevice(const char *_id, const char *_title, const char **_type)
       : id(_id), title(_title), type(_type) {}
@@ -489,6 +521,20 @@ public:
     if (ws)
       delete ws;
 #endif
+    // Note: this destructor only releases the websocket. The linked lists
+    // of properties/actions/events and any queued action/event objects are
+    // not freed here, since ThingDevice instances are normally constructed
+    // once at global/static scope for the lifetime of the program. Avoid
+    // dynamically creating and destroying ThingDevice instances at runtime
+    // without also cleaning up those lists, or they will leak.
+  }
+
+  // Adjust how many event objects are retained in the queue before the
+  // oldest are discarded. Call before events start firing if you want a
+  // non-default size.
+  void setEventQueueMax(size_t max) {
+    eventQueueMax = max;
+    pruneEventQueue();
   }
 
 #ifndef WITHOUT_WS
@@ -666,9 +712,39 @@ public:
     actionQueue = obj;
   }
 
+  // Drops the oldest (tail) entries from eventQueue until its size is at
+  // or under eventQueueMax. Without this, eventQueue grows without bound:
+  // every fired event is `new`'d and nothing else in this file ever frees
+  // one, which will eventually exhaust heap on a memory-constrained board.
+  void pruneEventQueue() {
+    if (eventQueueMax == 0) {
+      return; // pruning explicitly disabled
+    }
+
+    while (eventQueueSize > eventQueueMax && eventQueue != nullptr) {
+      if (eventQueue->next == nullptr) {
+        // Only one node left.
+        delete eventQueue;
+        eventQueue = nullptr;
+        eventQueueSize = 0;
+        return;
+      }
+
+      ThingEventObject *curr = eventQueue;
+      while (curr->next->next != nullptr) {
+        curr = curr->next;
+      }
+      delete curr->next;
+      curr->next = nullptr;
+      eventQueueSize--;
+    }
+  }
+
   void queueEventObject(ThingEventObject *obj) {
     obj->next = eventQueue;
     eventQueue = obj;
+    eventQueueSize++;
+    pruneEventQueue();
 
 #ifndef WITHOUT_WS
 

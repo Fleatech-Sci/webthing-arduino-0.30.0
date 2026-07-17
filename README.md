@@ -3,24 +3,24 @@
 webthing-arduino 0.30.0
 ======================
 
-This fork hosts updated versions of Thing.h and ESPWebThingAdapter.h.
-This fork has been tested with the following libraries on Arduino V2.3.6
+This latest fork has updates and fixes to of Thing.h and ESPWebThingAdapter.h.
+This fork has been tested with the following libraries on Arduino V2.3.10
 
-esp32\3.3.0\libraries\WiFi \
-esp32\3.3.0\libraries\ESPmDNS \
-webthing-arduino at version 0.3.0 \
-ESP Async WebServer at version 3.7.10 \
-FS at version 3.3.0 \
-Async TCP at version 3.4.7 \
-ArduinoJson at version 7.4.2 \
-WiFi at version 3.3.0 \
-Networking at version 3.3.0 \
-ESPmDNS at version 3.3.0 \
-ElegantOTA at version 3.1.7 \
-Update at version 3.3.0 \
-BlockNot at version 2.4.0 \
+Compilation has been tested with the following library versions, to fulfill the API updates for ArduinoJson 7.x.x, ESPAsyncWebServer 3.11.2 and esp32 3.3.10.
+Full testing is currently proceeding.
 
-to fulfill the API updates for ArduinoJson 7.x.x, ESPAsyncWebServer 3.7.2 and esp32 3.3.0.
+Using library webthing-arduino at version 0.30.0
+Using library ESP Async WebServer at version 3.11.2
+Using library FS at version 3.3.10
+Using library Async TCP at version 3.4.10
+Using library ArduinoJson at version 7.4.3
+Using library WiFi at version 3.3.10
+Using library Networking at version 3.3.10
+Using library ESPmDNS at version 3.3.10
+Using library ElegantOTA at version 3.1.7
+Using library Update at version 3.3.10
+Using library BlockNot at version 3.1.0
+Using library Hash at version 3.3.10
 
 EthernetWebThingAdapter.h and WiFiWebThingAdapter.h have NOT been updated as yet.
 
